@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: mongle-p
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node proxy.js
+    envVars:
+      - key: PW_KEY
+        generateValue: true

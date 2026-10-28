@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxy Tester</title>
+<style>
+:root{--bg:#0e0e14;--card:#181822;--line:#2a2a3a;--txt:#eee;--dim:#9a9aae;--acc:#7c6cff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:26px 16px 70px}
+h1{letter-spacing:2px;margin:0 0 6px}
+h3{margin:22px 0 8px;font-size:15px;color:var(--acc);letter-spacing:1px;text-transform:uppercase}
+.sub{color:var(--dim);font-size:14px;line-height:1.55;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+label{font-size:13px;color:var(--dim);display:block;margin-bottom:6px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:220px;padding:12px 14px;border-radius:10px;border:1px solid #333;background:#10101a;color:#fff;font-size:15px;outline:none}
+input[type=text]:focus{border-color:var(--acc)}
+button{padding:11px 18px;border:0;border-radius:10px;background:var(--acc);color:#fff;font-size:15px;cursor:pointer}
+button.alt{background:#2b2b3d}
+button:disabled{opacity:.5;cursor:default}
+.chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;color:var(--txt)}
+.small{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.5}
+.res{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px}
+.res:last-child{border-bottom:0}
+.ic{width:22px;flex:none;text-align:center}
+.nm{font-weight:600}
+.dt{color:var(--dim);white-space:pre-wrap;word-break:break-word;font-size:13px;margin-top:2px}
+.bar{display:flex;gap:10px;align-items:center;margin:18px 0 10px;flex-wrap:wrap}
+#status{color:#7ddc9a;font-size:14px}
+textarea{width:100%;height:240px;background:#10101a;color:#ddd;border:1px solid #333;border-radius:10px;padding:12px;font-family:monospace;font-size:12.5px;display:none}
+.stage{background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--line);min-height:40px}
+.frame{width:100%;height:300px;border:0;background:#fff;display:block}
+.sum{display:flex;gap:14px;font-size:14px;margin:14px 0 4px}
+.mini{display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap}
+.mini button{padding:4px 10px;font-size:12px;background:#262636;border-radius:8px}
+.mini button.on.yes{background:#1f9d55}.mini button.on.maybe{background:#c98a00}.mini button.on.no{background:#c0392b}
+.mini a{color:#9a8cff;font-size:12px;margin-right:6px;text-decoration:none}
+.note{color:var(--dim);font-size:12.5px;margin:0 0 8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PROXY TESTER</h1>
+  <p class="sub">Checks what your browser, your website host, and your proxy can and can't do, then gives you one report to copy.
+  The browser checks work on their own. Enter your proxy's address to test the proxy too.</p>
+
+  <div class="card">
+    <label for="proxy">Your proxy's address</label>
+    <div class="row">
+      <input type="text" id="proxy" placeholder="https://your-proxy.example.com" autocomplete="off" spellcheck="false">
+      <button id="run">&#9654; Run all tests</button>
+      <button id="stop" class="alt" disabled>&#9632; Stop</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="sites" checked> Also open real websites through the proxy (about 20 seconds each)</label>
+    <div class="small">Using the proxy on your own computer? Enter <b>http://localhost:8080</b>.<br>
+    If this page is on https, your proxy address must be https too (localhost is the one exception).
+    Tip: add <b>?sites=https://a.com,https://b.com</b> to this page's address to test your own list.</div>
+  </div>
+
+  <div class="sum" id="sum"></div>
+  <div id="results"></div>
+
+  <div class="bar">
+    <button id="copy">&#128203; Copy report</button>
+    <span id="status"></span>
+  </div>
+  <textarea id="out" readonly></textarea>
+
+  <h3>Live preview</h3>
+  <div class="stage" id="stage"></div>
+</div>
+
+<script>
+var DEFAULT_SITES=[
+  {name:"example.com",url:"https://example.com"},
+  {name:"YouTube",url:"https://www.youtube.com"},
+  {name:"poxel.io",url:"https://poxel.io"},
+  {name:"Wikipedia",url:"https://en.wikipedia.org/wiki/Special:Random"},
+  {name:"DuckDuckGo",url:"https://duckduckgo.com/html/?q=cats"},
+  {name:"Reddit",url:"https://www.reddit.com"},
+  {name:"GitHub",url:"https://github.com"},
+  {name:"Twitch",url:"https://www.twitch.tv"},
+  {name:"Discord",url:"https://discord.com"},
+  {name:"Krunker",url:"https://krunker.io"},
+  {name:"Shell Shockers",url:"https://shellshock.io"},
+  {name:"Slither.io",url:"https://slither.io"},
+  {name:"1v1.LOL",url:"https://1v1.lol"},
+  {name:"CrazyGames",url:"https://www.crazygames.com"},
+  {name:"Hacker News",url:"https://news.ycombinator.com"},
+  {name:"Stack Overflow",url:"https://stackoverflow.com"}
+];
+
+// PURE-START
+function normalizeProxy(v){
+  v=(v||"").trim().replace(/\/+$/,"");
+  if(!v)return "";
+  if(!/^https?:\/\//i.test(v))v=(/^(localhost|127\.|192\.168\.|10\.)/i.test(v)?"http://":"https://")+v;
+  return v;
+}
+function wsUrl(p){return p.replace(/^http/i,"ws");}
+function siteKey(u){
+  try{
+    var h=new URL(u).hostname.split(".");
+    if(/^\d+(\.\d+){3}$/.test(h.join(".")))return h.join(".");
+    return h.length>2?h.slice(-2).join("."):h.join(".");
+  }catch(e){return u;}
+}
+function topErrors(errs,n){
+  var c={},order=[];
+  (errs||[]).forEach(function(e){
+    var k=e.type+" "+e.msg;
+    if(!c[k]){c[k]=0;order.push(k);}
+    c[k]++;
+  });
+  order.sort(function(a,b){return c[b]-c[a];});
+  return order.slice(0,n).map(function(k){return (c[k]>1?c[k]+"x ":"")+k;});
+}
+function rateSite(m){
+  var errs=m.errors||[];
+  var count=function(list){return errs.filter(function(e){return list.indexOf(e.type)>-1;}).length;};
+  var net=errs.filter(function(e){return e.type==="fetch-failed"||e.type==="xhr-failed"||e.type.indexOf("http-")===0;}).length,
+      res=count(["resource-failed"]),
+      ws=Math.max(count(["ws-error"]),count(["ws-closed"])),
+      js=count(["js-error","promise-rejected"]);
+  if(!m.started)return {status:"fail",summary:"Nothing came back. The proxy never delivered the page (blocked, timed out, or the site refused)."};
+  if(!m.loaded&&!m.domReady)return {status:"fail",summary:"The page started but never finished loading."};
+  var blank=!!(m.snapshot&&m.snapshot.text<30&&m.snapshot.canvas===0&&m.snapshot.imgs===0);
+  var bits=[];
+  if(blank)bits.push("page looks blank");
+  if(net)bits.push(net+" failed request"+(net>1?"s":""));
+  if(ws)bits.push(ws+" WebSocket problem"+(ws>1?"s":""));
+  if(js)bits.push(js+" script error"+(js>1?"s":""));
+  if(res)bits.push(res+" missing file"+(res>1?"s":""));
+  var bad=blank||net>=3||ws>0||res>=5;
+  if(!bits.length)return {status:"pass",summary:"Loaded fine"+(m.snapshot&&m.snapshot.title?" (\""+m.snapshot.title.slice(0,50)+"\")":"")};
+  return {status:bad?"warn":"pass",summary:(bad?"Loaded, but: ":"Loaded (minor noise): ")+bits.join(", ")};
+}
+function buildReport(meta,results){
+  var tag={pass:"PASS",warn:"WARN",fail:"FAIL",info:"INFO"};
+  var n={pass:0,warn:0,fail:0};
+  results.forEach(function(r){if(n[r.status]!==undefined)n[r.status]++;});
+  var t="PROXY TESTER REPORT ("+meta.date+")\n";
+  t+="Tester page: "+meta.page+"\n";
+  t+="Proxy: "+(meta.proxy||"(none entered)")+"\n";
+  t+="Browser: "+meta.ua+"\n";
+  t+="Summary: "+n.pass+" PASS, "+n.warn+" WARN, "+n.fail+" FAIL\n";
+  var last=null;
+  results.forEach(function(r){
+    if(r.section!==last){t+="\n== "+r.section+" ==\n";last=r.section;}
+    var lines=String(r.detail||"").split("\n");
+    var you=r.manual?{yes:"WORKS",maybe:"PARTLY",no:"BROKEN"}[r.manual]:"";
+    t+="["+tag[r.status]+"] "+r.name+(lines[0]?" - "+lines[0]:"")+(you?"   <== YOU SAID: "+you:"")+"\n";
+    for(var i=1;i<lines.length;i++)t+="       "+lines[i]+"\n";
+  });
+  return t;
+}
+// PURE-END
+
+var $=function(id){return document.getElementById(id);};
+var results=[],running=false,stopFlag=false;
+var ICON={pass:"\u2705",warn:"\u26A0\uFE0F",fail:"\u274C",info:"\u2139\uFE0F"};
+
+function render(){
+  var host=$("results");host.innerHTML="";
+  var n={pass:0,warn:0,fail:0},last=null,card=null;
+  results.forEach(function(r){
+    if(n[r.status]!==undefined)n[r.status]++;
+    if(r.section!==last){
+      var h=document.createElement("h3");h.textContent=r.section;host.appendChild(h);
+      if(r.site){var nt=document.createElement("p");nt.className="note";nt.textContent="These ratings are automatic guesses and can be wrong. Click Open to try a site yourself, then tell me what really happened with Worked / Partly / Broken before you copy the report.";host.appendChild(nt);}
+      card=document.createElement("div");card.className="card";card.style.padding="4px 0";host.appendChild(card);
+      last=r.section;
+    }
+    var row=document.createElement("div");row.className="res";
+    var ic=document.createElement("div");ic.className="ic";ic.textContent=ICON[r.status]||"";
+    var body=document.createElement("div");
+    var nm=document.createElement("div");nm.className="nm";nm.textContent=r.name;body.appendChild(nm);
+    if(r.detail){var dt=document.createElement("div");dt.className="dt";dt.textContent=r.detail;body.appendChild(dt);}
+    if(r.site){
+      var mini=document.createElement("div");mini.className="mini";
+      if(r.openUrl){var oa=document.createElement("a");oa.href=r.openUrl;oa.target="_blank";oa.textContent="Open \u2197";mini.appendChild(oa);}
+      var lab=document.createElement("span");lab.textContent="You say:";lab.style.cssText="font-size:12px;color:#9a9aae";mini.appendChild(lab);
+      [["yes","Worked"],["maybe","Partly"],["no","Broken"]].forEach(function(o){
+        var b=document.createElement("button");b.className=o[0]+(r.manual===o[0]?" on":"");b.textContent=o[1];
+        b.onclick=function(){r.manual=(r.manual===o[0])?null:o[0];render();};
+        mini.appendChild(b);
+      });
+      body.appendChild(mini);
+    }
+    row.appendChild(ic);row.appendChild(body);card.appendChild(row);
+  });
+  $("sum").textContent=results.length?("\u2705 "+n.pass+"   \u26A0\uFE0F "+n.warn+"   \u274C "+n.fail):"";
+}
+function add(section,name,status,detail,extra){var r={section:section,name:name,status:status,detail:detail||""};if(extra)for(var k in extra)r[k]=extra[k];results.push(r);render();}
+function say(t){$("status").textContent=t;}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function fetchT(url,ms){
+  var c=new AbortController();var t=setTimeout(function(){c.abort();},ms);
+  return fetch(url,{cache:"no-store",signal:c.signal}).then(function(r){clearTimeout(t);return r;},function(e){clearTimeout(t);throw e;});
+}
+function wsEcho(url,ms){
+  return new Promise(function(resolve){
+    var t0=Date.now(),done=false,w;
+    var finish=function(o){if(done)return;done=true;try{w.close();}catch(e){}resolve(o);};
+    var msg="ping-"+Math.random().toString(36).slice(2);
+    try{w=new WebSocket(url);}catch(e){return resolve({ok:false,err:String(e.message||e)});}
+    w.onopen=function(){w.send(msg);};
+    w.onmessage=function(e){finish(e.data===msg?{ok:true,ms:Date.now()-t0}:{ok:false,err:"unexpected reply"});};
+    w.onerror=function(){finish({ok:false,err:"connection error"});};
+    w.onclose=function(e){finish({ok:false,err:"closed (code "+e.code+")"});};
+    setTimeout(function(){finish({ok:false,err:"timed out"});},ms);
+  });
+}
+
+/* ---------- Part 1: this browser / website ---------- */
+async function envChecks(){
+  var S="This browser and website";
+  add(S,"Page address","info",location.href);
+  var framed=false;try{framed=window.top!==window;}catch(e){framed=true;}
+  add(S,"Running inside a frame",framed?"warn":"pass",framed?"Yes (iframe or about:blank) - some features can be limited":"No - normal page");
+  add(S,"Secure page (HTTPS)",window.isSecureContext?"pass":"warn",window.isSecureContext?"Yes":"No - service workers, clipboard and many features need HTTPS");
+  try{
+    document.cookie="pt_test=1; path=/; SameSite=Lax";
+    var ok=document.cookie.indexOf("pt_test=1")>-1;
+    document.cookie="pt_test=; path=/; max-age=0";
+    add(S,"Cookies",ok?"pass":"warn",ok?"Work":"Blocked");
+  }catch(e){add(S,"Cookies","warn","Blocked: "+e);}
+  try{localStorage.setItem("pt","1");localStorage.removeItem("pt");add(S,"Local storage","pass","Works");}
+  catch(e){add(S,"Local storage","warn","Blocked: "+e);}
+  add(S,"IndexedDB",window.indexedDB?"pass":"warn",window.indexedDB?"Available":"Missing");
+  try{
+    var url=URL.createObjectURL(new Blob(["onmessage=function(e){postMessage(e.data+1)}"],{type:"text/javascript"}));
+    var w=new Worker(url);
+    var r=await new Promise(function(res){
+      var t=setTimeout(function(){res(null);},2500);
+      w.onmessage=function(e){clearTimeout(t);res(e.data);};
+      w.onerror=function(){clearTimeout(t);res(null);};
+      w.postMessage(1);
+    });
+    w.terminate();
+    add(S,"Web Workers",r===2?"pass":"warn",r===2?"Work":"Did not respond");
+  }catch(e){add(S,"Web Workers","warn","Blocked: "+e);}
+  add(S,"Service Workers",("serviceWorker" in navigator)?"pass":"warn",("serviceWorker" in navigator)?"Available":"Not available here (needs HTTPS)");
+  var wasm=false;try{wasm=typeof WebAssembly==="object"&&WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0]));}catch(e){}
+  add(S,"WebAssembly (games need it)",wasm?"pass":"fail",wasm?"Works":"Missing");
+  var gl1=null,gl2=null,rend="";
+  try{
+    var c=document.createElement("canvas");
+    gl2=c.getContext("webgl2");
+    gl1=gl2||document.createElement("canvas").getContext("webgl");
+    if(gl1){var ext=gl1.getExtension("WEBGL_debug_renderer_info");if(ext)rend=gl1.getParameter(ext.UNMASKED_RENDERER_WEBGL)||"";}
+  }catch(e){}
+  var soft=/swiftshader|llvmpipe|software/i.test(rend);
+  add(S,"WebGL (3D games need it)",gl1?(soft?"warn":"pass"):"fail",gl1?((gl2?"WebGL 2":"WebGL 1")+(rend?" - "+rend:"")+(soft?" (software rendering: games will be slow)":"")):"Not available - 3D games will not run");
+  var sab=typeof SharedArrayBuffer!=="undefined";
+  add(S,"Shared memory (some games need it)",sab&&window.crossOriginIsolated?"pass":"info",sab?(window.crossOriginIsolated?"Available":"Present but page is not cross-origin isolated"):"Not available on this page");
+  add(S,"Audio",(window.AudioContext||window.webkitAudioContext)?"pass":"warn",(window.AudioContext||window.webkitAudioContext)?"Available":"Missing");
+  add(S,"Fullscreen and mouse lock",(document.fullscreenEnabled&&("requestPointerLock" in Element.prototype))?"pass":"info",(document.fullscreenEnabled?"Fullscreen OK":"Fullscreen blocked")+", "+(("requestPointerLock" in Element.prototype)?"mouse lock OK":"mouse lock missing"));
+  add(S,"Clipboard",(navigator.clipboard&&navigator.clipboard.writeText)?"pass":"info",(navigator.clipboard&&navigator.clipboard.writeText)?"Available":"Not available (copy by hand)");
+  try{
+    var rr=await fetchT("https://api.github.com/zen",6000);
+    add(S,"Internet from this browser",rr.ok?"pass":"warn","HTTP "+rr.status);
+  }catch(e){add(S,"Internet from this browser","warn","Could not reach api.github.com ("+e+") - offline, or a blocker/filter is in the way");}
+  var pub=await wsEcho("wss://echo.websocket.org",5000);
+  if(!pub.ok)pub=await wsEcho("wss://ws.postman-echo.com/raw",5000);
+  add(S,"WebSocket to the public internet",pub.ok?"pass":"warn",pub.ok?"Works ("+pub.ms+" ms)":"Failed ("+pub.err+"). The public test servers may be down, or WebSockets are blocked on this network.");
+}
+
+/* ---------- Part 2: the proxy ---------- */
+function probeSite(base,url,maxMs){
+  return new Promise(function(resolve){
+    var m={started:false,domReady:false,loaded:false,snapshot:null,errors:[]};
+    var fr=document.createElement("iframe");fr.className="frame";
+    $("stage").innerHTML="";$("stage").appendChild(fr);
+    var snapAt=0,done=false,iv=null,t0=Date.now();
+    function finish(){
+      if(done)return;done=true;clearInterval(iv);
+      window.removeEventListener("message",onMsg);
+      try{fr.src="about:blank";}catch(e){}
+      resolve(m);
+    }
+    function onMsg(e){
+      if(e.source!==fr.contentWindow)return;
+      var d=e.data;if(!d||!d.__proxy)return;
+      if(d.__proxy==="start")m.started=true;
+      else if(d.__proxy==="dom-ready")m.domReady=true;
+      else if(d.__proxy==="load")m.loaded=true;
+      else if(d.__proxy==="snapshot"){m.snapshot={title:d.title,text:d.text,canvas:d.canvas,imgs:d.imgs};snapAt=Date.now();}
+      else if(d.__proxy==="diag")m.errors.push({type:d.type,msg:d.msg});
+    }
+    window.addEventListener("message",onMsg);
+    iv=setInterval(function(){
+      if(stopFlag||Date.now()-t0>maxMs||(snapAt&&Date.now()-snapAt>2500))finish();
+    },250);
+    fr.src=base+"/go?url="+encodeURIComponent(url)+"&probe=1";
+  });
+}
+async function proxyChecks(base){
+  var S="Your proxy";
+  var t0=performance.now(),port=null;
+  say("Checking the proxy...");
+  try{
+    var r=await fetchT(base+"/__ping",8000);
+    await r.json();
+    add(S,"Proxy is reachable","pass",Math.round(performance.now()-t0)+" ms");
+  }catch(e){
+    add(S,"Proxy is reachable","fail","Could not reach "+base+" ("+e+").\nCheck the address, that it is running (free hosts go to sleep - wait 30 seconds and try again), and use https:// if this page is https.");
+    return false;
+  }
+  say("Running server checks...");
+  try{
+    var r2=await fetchT(base+"/__selftest",30000);
+    var j=await r2.json();port=j.port;
+    j.checks.forEach(function(c){add(S,c.name,c.status,c.detail);});
+  }catch(e){add(S,"Server self-test","warn","Could not run: "+e);}
+  if(stopFlag)return true;
+  say("Testing WebSockets...");
+  var d=await wsEcho(wsUrl(base)+"/__echo",7000);
+  add(S,"WebSocket connection (games need this)",d.ok?"pass":"fail",d.ok?"Works ("+d.ms+" ms)":"Failed: "+d.err+". Your host may block WebSockets, which breaks multiplayer games.");
+  if(port&&!stopFlag){
+    var rl=await wsEcho(wsUrl(base)+"/ws?url="+encodeURIComponent("ws://127.0.0.1:"+port+"/__echo"),8000);
+    add(S,"WebSocket relay (proxying game servers)",rl.ok?"pass":"fail",rl.ok?"Works ("+rl.ms+" ms)":"Failed: "+rl.err);
+  }
+  if(stopFlag)return true;
+  say("Loading a page through the proxy...");
+  var pm=await probeSite(base,"https://example.com",15000);
+  var pr=rateSite(pm);
+  add(S,"Proxied page loads (example.com)",pr.status,pr.summary+(pr.status!=="pass"&&pm.errors.length?"\n"+topErrors(pm.errors,4).join("\n"):""));
+  return true;
+}
+async function siteChecks(base){
+  var S="Websites through the proxy";
+  var list=DEFAULT_SITES.slice(1);
+  var m=location.search.match(/[?&]sites=([^&]+)/);
+  if(m){
+    list=decodeURIComponent(m[1]).split(",").map(function(u){
+      u=u.trim();if(!/^https?:\/\//i.test(u))u="https://"+u;
+      var h;try{var uu=new URL(u);h=uu.hostname+(uu.pathname.length>1?uu.pathname:"");}catch(e){h=u;}
+      return {name:h,url:u};
+    });
+  }
+  var sameOrigin=false;try{sameOrigin=new URL(base).origin===location.origin;}catch(e){}
+  for(var i=0;i<list.length;i++){
+    if(stopFlag)break;
+    var s=list[i];
+    say("Testing "+s.name+" ("+(i+1)+" of "+list.length+")...");
+    var pm=await probeSite(base,s.url,22000);
+    var pr=rateSite(pm);
+    var lines=[];
+    if(pr.status!=="pass")lines=topErrors(pm.errors,6);
+    if(sameOrigin&&pr.status!=="pass"){
+      try{
+        var dr=await fetchT(base+"/__diag?site="+encodeURIComponent(siteKey(s.url)),5000);
+        (await dr.json()).slice(0,8).forEach(function(l){lines.push("server: "+l);});
+      }catch(e){}
+    }
+    add(S,s.name,pr.status,pr.summary+(lines.length?"\n"+lines.join("\n"):""),{site:true,openUrl:base+"/go?url="+encodeURIComponent(s.url)});
+  }
+}
+
+async function runAll(){
+  if(running)return;
+  running=true;stopFlag=false;results=[];render();
+  $("run").disabled=true;$("stop").disabled=false;$("out").style.display="none";
+  var base=normalizeProxy($("proxy").value);
+  $("proxy").value=base;
+  try{localStorage.setItem("ptProxy",base);}catch(e){}
+  try{
+    await envChecks();
+    if(base){
+      var ok=await proxyChecks(base);
+      if(ok&&!stopFlag&&$("sites").checked)await siteChecks(base);
+    }else add("Your proxy","Proxy address","info","No proxy address entered, so only the browser checks were run.");
+  }catch(e){add("Tester","Unexpected error","fail",String(e&&e.stack||e));}
+  running=false;$("run").disabled=false;$("stop").disabled=true;
+  $("stage").innerHTML="";
+  say(stopFlag?"Stopped.":"Done. Click Copy report.");
+}
+async function copyReport(){
+  var text=buildReport({date:new Date().toISOString().slice(0,10),page:location.href,proxy:normalizeProxy($("proxy").value),ua:navigator.userAgent},results);
+  $("out").value=text;$("out").style.display="block";
+  try{await navigator.clipboard.writeText(text);say("Copied!");}
+  catch(e){$("out").select();try{document.execCommand("copy");say("Copied!");}catch(x){say("Select the text below and copy it.");}}
+}
+$("run").onclick=runAll;
+$("stop").onclick=function(){stopFlag=true;say("Stopping...");};
+$("copy").onclick=copyReport;
+(function init(){
+  var q=location.search.match(/[?&]proxy=([^&]+)/);
+  var saved="";try{saved=localStorage.getItem("ptProxy")||"";}catch(e){}
+  var def="";
+  if(q)def=decodeURIComponent(q[1]);
+  else if(/\/tester\/?$/.test(location.pathname))def=location.origin;
+  else def=saved;
+  $("proxy").value=def;
+  var servedByProxy=/\/tester\/?$/.test(location.pathname);
+  var auto=/[?&]auto=1/.test(location.search)||(servedByProxy&&!/[?&]auto=0/.test(location.search));
+  if(auto)setTimeout(runAll,400);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mongle p - launcher</title>
+<style>
+body{background:#000;color:#0f4;font-family:monospace;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.box{max-width:560px;width:100%}
+h1{letter-spacing:2px;margin:0 0 6px}
+p{line-height:1.6;color:#aca}
+a{color:#7cff9c}
+.row{display:flex;gap:8px;margin:14px 0}
+input{flex:1;background:#020;border:1px solid #0a3;color:#0f4;padding:10px;font:inherit}
+button{background:#031;color:#0f4;border:1px solid #0a3;padding:10px 16px;font:inherit;cursor:pointer}
+.ok{color:#7cff9c}.bad{color:#fc6}
+#status{margin:10px 0;min-height:1.4em}
+.steps{background:#061806;border:1px solid #0a3;padding:14px 16px;border-radius:6px;font-size:13.5px;margin-top:18px}
+.steps b{color:#9fe}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>MONGLE P</h1>
+  <p id="status">Checking if mongle p is already running on this address...</p>
+
+  <div class="row">
+    <input id="addr" placeholder="http://your-server-address:8080" autocomplete="off" spellcheck="false">
+    <button id="go">Open it</button>
+  </div>
+
+  <div class="steps" id="howto" style="display:none">
+    <p><b>This page can't run mongle p by itself.</b> mongle p is a small server
+    (<code>proxy.js</code>, built with Node.js) - it has to actually be RUNNING
+    somewhere before any page can connect to it. This launcher just finds it and
+    takes you there once it is.</p>
+    <p><b>If you haven't started it yet:</b></p>
+    <ul>
+      <li>On your own PC: unzip the project, double-click <code>start.bat</code>
+      (Windows), then open <code>http://localhost:8080</code> or just type that above.</li>
+      <li>On a free host (Render, Railway, Replit, etc.): upload the unzipped project,
+      set it to run <code>node proxy.js</code>, and use the address the host gives you.</li>
+    </ul>
+    <p>Once it's running, type its address above and click "Open it" - or just bookmark
+    that address directly next time and skip this page.</p>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const status = $('status');
+
+function tryConnect(base, announce){
+  return fetch(base.replace(/\/$/,'') + '/__ping', {cache:'no-store'})
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(() => { if (announce) status.innerHTML = '<span class="ok">Found it - taking you there...</span>'; return true; })
+    .catch(() => false);
+}
+
+// 1) is mongle p running at THIS SAME address (this page was served by it, or sits
+//    right next to it on the same host)?
+tryConnect(location.origin, false).then(ok => {
+  if (ok){
+    status.innerHTML = '<span class="ok">mongle p is running here - taking you there...</span>';
+    setTimeout(() => location.href = location.origin + '/', 600);
+    return;
+  }
+  status.innerHTML = '<span class="bad">Not found at this address.</span> Type the address mongle p is running at below, or see how to start it.';
+  $('howto').style.display = 'block';
+  // 2) remember the last address that worked, for next time
+  const saved = localStorage.getItem('mongleAddr');
+  if (saved) $('addr').value = saved;
+});
+
+function go(){
+  let v = $('addr').value.trim();
+  if (!v) return;
+  if (!/^https?:\/\//i.test(v)) v = (/^(localhost|127\.|192\.168\.|10\.)/i.test(v) ? 'http://' : 'https://') + v;
+  status.textContent = 'Checking...';
+  tryConnect(v, false).then(ok => {
+    if (ok){
+      localStorage.setItem('mongleAddr', v);
+      status.innerHTML = '<span class="ok">Found it - taking you there...</span>';
+      setTimeout(() => location.href = v.replace(/\/$/,'') + '/', 400);
+    } else {
+      status.innerHTML = '<span class="bad">Could not reach mongle p at that address.</span> Make sure it is running, and that you typed https:// if this page itself is https.';
+    }
+  });
+}
+$('go').onclick = go;
+$('addr').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+</script>
+</body>
+</html>

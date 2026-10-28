@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mongle p</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#000; --panel:#030b05; --line:#0a4d1c; --neon:#00ff41; --mid:#00b82e;
+  --dim:#3f8a54; --text:#b8ffcb; --warn:#ff3b5c;
+  --mono:'JetBrains Mono','Fira Code',ui-monospace,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font:15px/1.5 var(--mono);overflow-x:hidden;min-height:100vh}
+/* scanlines + vignette */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
+  background:repeating-linear-gradient(0deg,rgba(0,255,65,.035) 0 1px,transparent 1px 3px)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
+  background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.85))}
+canvas#rain{position:fixed;inset:0;width:100%;height:100%;opacity:.16;z-index:0}
+:focus-visible{outline:2px solid var(--neon);outline-offset:3px}
+
+/* boot sequence */
+#boot{position:fixed;inset:0;z-index:100;background:#000;padding:8vh 6vw;color:var(--neon);
+  white-space:pre-wrap;font-size:14px;cursor:pointer}
+#boot.done{display:none}
+
+main{position:relative;z-index:2;width:100%;max-width:1100px;margin:0 auto;padding:6vh clamp(22px,4vw,64px) 40px}
+h1{font-size:clamp(34px,8.5vw,76px);font-weight:800;letter-spacing:.12em;color:var(--neon);
+  text-align:center;text-shadow:0 0 8px var(--neon),0 0 28px rgba(0,255,65,.55),0 0 70px rgba(0,255,65,.3)}
+h1 span{color:var(--text);text-shadow:0 0 10px rgba(0,255,65,.6)}
+.glitch{animation:glitch 600ms steps(2) 1}
+@keyframes glitch{
+  0%{transform:translate(0)}20%{transform:translate(-4px,1px);filter:hue-rotate(40deg)}
+  40%{transform:translate(4px,-2px)}60%{transform:translate(-2px,2px);filter:none}100%{transform:none}}
+.status{text-align:center;color:var(--dim);margin-top:10px;font-size:13px}
+.status b{color:var(--neon);font-weight:400}
+.status b::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;
+  background:var(--neon);box-shadow:0 0 10px var(--neon);margin-right:8px;animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+/* prompt bar */
+.prompt{display:flex;align-items:center;margin-top:44px;background:var(--panel);
+  border:1px solid var(--line);border-radius:6px;transition:border-color .15s,box-shadow .15s}
+.prompt:focus-within{border-color:var(--neon);box-shadow:0 0 0 1px var(--neon),0 0 26px rgba(0,255,65,.28)}
+.prompt label{padding:0 4px 0 16px;color:var(--mid);white-space:nowrap;font-size:14px}
+.prompt input{flex:1;min-width:0;background:none;border:0;color:var(--neon);font:inherit;
+  padding:16px 10px;caret-color:var(--neon)}
+.prompt input::placeholder{color:#1f6a35}
+.prompt input:focus{outline:none}
+.go{background:var(--neon);color:#000;border:0;font:800 14px var(--mono);padding:0 26px;align-self:stretch;
+  border-radius:0 5px 5px 0;cursor:pointer;box-shadow:0 0 18px rgba(0,255,65,.5);transition:filter .15s}
+.go:hover{filter:brightness(1.15)}
+.hint{color:var(--dim);font-size:12px;margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+kbd{border:1px solid var(--line);border-radius:3px;padding:0 5px;color:var(--mid);font:inherit}
+#log{min-height:22px;margin-top:16px;font-size:13px;color:var(--mid)}
+#log:empty{display:none}
+#log.err{color:var(--warn)}
+
+/* tiles */
+.sec{margin-top:46px;color:var(--mid);font-size:13px}
+.sec::before{content:"> "}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
+.tile{background:var(--panel);border:1px solid var(--line);color:var(--text);font:inherit;text-align:left;
+  padding:14px 16px;border-radius:6px;cursor:pointer;text-decoration:none;display:block;
+  transition:transform .12s,border-color .12s,box-shadow .12s}
+.tile:hover{border-color:var(--neon);box-shadow:0 0 18px rgba(0,255,65,.25);transform:translateY(-2px)}
+.tile b{display:block;color:var(--neon);font-weight:700}
+.tile small{color:var(--dim)}
+
+/* settings */
+.settings{display:flex;gap:14px;align-items:center;margin-top:46px;color:var(--dim);font-size:13px;flex-wrap:wrap}
+select,.s{background:var(--panel);color:var(--neon);border:1px solid var(--line);border-radius:4px;
+  font:inherit;padding:6px 10px}
+.s{width:190px}
+.tools{margin-top:34px;font-size:12px;color:var(--dim)}
+.tools a{color:var(--mid);text-decoration:none;margin-right:16px}
+.tools a:hover{color:var(--neon);text-shadow:0 0 8px var(--neon)}
+
+
+/* ---- browser shell: toolbar + tabs ---- */
+#app{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh}
+#bar{background:rgba(3,11,5,.94);border-bottom:1px solid var(--line);padding:8px 12px;display:flex;flex-direction:column;gap:8px;position:relative;z-index:60}
+.row{display:flex;gap:8px;align-items:center}
+.bar-btn{background:none;color:var(--neon);border:1px solid var(--line);border-radius:4px;font:inherit;font-size:13px;padding:5px 11px;cursor:pointer;white-space:nowrap}
+.bar-btn:hover:not(:disabled){border-color:var(--neon);box-shadow:0 0 12px rgba(0,255,65,.35)}
+.bar-btn:disabled{opacity:.35;cursor:not-allowed}
+.bar-btn[aria-pressed="true"]{color:#000;background:var(--neon);border-color:var(--neon)}
+#addr{flex:1;display:flex;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:4px}
+#addr:focus-within{border-color:var(--neon);box-shadow:0 0 14px rgba(0,255,65,.25)}
+#addr input{flex:1;min-width:0;background:none;border:0;color:var(--neon);font:inherit;font-size:13px;padding:6px 10px;caret-color:var(--neon)}
+#addr input:focus{outline:none}
+#addr input::placeholder{color:#1f6a35}
+#tabs{display:flex;gap:6px;overflow-x:auto;min-width:0}
+.tab{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:4px;padding:4px 8px;color:var(--dim);cursor:pointer;white-space:nowrap;max-width:210px;font-size:13px;flex:none}
+.tab span{overflow:hidden;text-overflow:ellipsis}
+.tab.on{color:var(--neon);border-color:var(--neon);box-shadow:0 0 10px rgba(0,255,65,.3)}
+.tab-close{border:0;background:transparent;color:var(--mid);padding:0 2px;font:inherit;line-height:1;cursor:pointer}
+.tab-close:hover{color:var(--warn)}
+#stage{position:relative;flex:1;min-height:0}
+#home{position:absolute;inset:0;overflow:auto}
+#home[hidden]{display:none}
+#stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+.source-pane{position:absolute;inset:0;overflow:auto;padding:20px;background:#000}
+.source-pane pre{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text);font:13px/1.55 var(--mono)}
+.bookmark-list{display:grid;gap:8px;margin-top:14px}
+.bookmark-row{display:flex;align-items:stretch;gap:8px}
+.bookmark-row .tile{flex:1;min-width:0}
+.bookmark-remove{background:transparent;border:1px solid var(--line);color:var(--dim);font:inherit;padding:0 12px;cursor:pointer;border-radius:4px}
+.bookmark-remove:hover{border-color:var(--warn);color:var(--warn)}
+#nobm{color:var(--dim);font-size:12px;margin-top:10px}
+
+@media (max-width:560px){.prompt label{display:none}.prompt input{padding-left:16px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}canvas#rain{display:none}}
+</style>
+</head>
+<body>
+<canvas id="rain" aria-hidden="true"></canvas>
+<div id="boot" role="status" aria-live="polite"></div>
+
+<div id="app">
+  <header id="bar">
+    <div class="row">
+      <button class="bar-btn" id="btnHome" type="button" title="Home">home</button>
+      <button class="bar-btn" id="btnBack" type="button" disabled title="Back">&lt;</button>
+      <button class="bar-btn" id="btnFwd" type="button" disabled title="Forward">&gt;</button>
+      <button class="bar-btn" id="btnReload" type="button" disabled title="Reload">reload</button>
+      <form id="addr" autocomplete="off"><input id="addrInput" type="text" inputmode="url" spellcheck="false" autocapitalize="off" placeholder="Search or enter a URL for this tab" aria-label="Address bar"></form>
+      <button class="bar-btn" id="btnBm" type="button" disabled>&#9734; bookmark</button>
+      <button class="bar-btn" id="btnSrc" type="button" disabled>view source</button>
+      <button class="bar-btn" id="btnPop" type="button" disabled title="Open this page alone in a normal browser tab">pop out</button>
+      <button class="bar-btn" id="btnDiag" type="button" disabled title="Figure out why this tab is broken">diagnose</button>
+      <span id="speedBadge" style="font-size:12px;color:#6a8;margin-left:6px"></span>
+    </div>
+    <div id="tabs" role="tablist"></div>
+  </header>
+  <div id="stage">
+    <div id="home">
+<main>
+  <h1 id="title">MONGLE<span>_</span>P</h1>
+  <p class="status"><b>tunnel active</b></p>
+
+  <form class="prompt" id="form" autocomplete="off">
+    <label for="url">root@mongle:~$</label>
+    <input id="url" type="text" inputmode="url" spellcheck="false" autocapitalize="off"
+           placeholder="Enter a URL or search term" autofocus>
+    <button class="go" type="submit">GO</button>
+  </form>
+  <div class="hint"><span>Press <kbd>/</kbd> to focus the prompt</span><span>Search terms use the engine selected below</span></div>
+  <div id="log"></div>
+
+  <p class="sec">quick launch</p>
+  <div class="tiles" id="tiles"></div>
+
+  <p class="sec">saved logins</p>
+  <div class="bookmark-list" id="pwlist"></div>
+  <p id="nopw">no saved logins yet - log in to a site and mongle p will offer to save it</p>
+
+  <p class="sec">bookmarks</p>
+  <div class="bookmark-list" id="bookmarks"></div>
+  <p id="nobm">no bookmarks yet - open a site and press the bookmark button</p>
+
+  <div class="settings">
+    <span>search engine</span>
+    <select id="engine" aria-label="Search engine">
+      <option value="https://search.brave.com/search?q=%s">Brave</option>
+      <option value="https://duckduckgo.com/html/?q=%s">DuckDuckGo</option>
+      <option value="https://www.google.com/search?q=%s">Google</option>
+      <option value="https://www.bing.com/search?q=%s">Bing</option>
+    </select>
+    <span>panic url</span>
+    <input class="s" id="panic" placeholder="https://classroom.google.com" aria-label="Panic URL">
+    <span>cloak title</span>
+    <input class="s" id="ctitle" placeholder="Google Drive" aria-label="Cloak tab title">
+    <span>open sites</span>
+    <select id="openMode" aria-label="Where sites open">
+      <option value="tabs">in mongle p tabs</option>
+      <option value="window">in real browser tabs</option>
+    </select>
+    <button class="tile" id="cloak" type="button"><b>cloak</b><small>open in about:blank</small></button>
+  </div>
+  <div class="hint"><span>Press <kbd>`</kbd> (backtick) on this page to jump to the panic URL instantly.</span></div>
+
+  <p class="tools"><a href="/tester">tester</a><a href="/test">site test</a><a href="/debug">debug</a><a href="/slow">slow log</a><a href="/inspector">request inspector</a><a href="/clear">clear cache</a></p>
+</main>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
+  set(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
+};
+
+/* ---------- input handling ---------- */
+function resolve(input){
+  const v = input.trim();
+  if (!v) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return v;
+  if (/^[^\s]+\.[a-z]{2,}([\/?#].*)?$/i.test(v) || /^localhost(:\d+)?([\/?#].*)?$/i.test(v)) return 'https://' + v;
+  // Search terms go to OUR OWN /search page (not straight to Brave's site), which tries
+  // Brave first and falls back automatically if Brave can't be reached through the proxy.
+  return null;
+}
+function isSearchTerm(input){
+  const v = input.trim();
+  return !!v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v) && !/^[^\s]+\.[a-z]{2,}([\/?#].*)?$/i.test(v) && !/^localhost(:\d+)?([\/?#].*)?$/i.test(v);
+}
+// Pages the PROXY ITSELF serves (search results, debug tools...) are opened directly -
+// they must NOT be wrapped and re-fetched through /go, which is for real outside websites
+// and correctly refuses to fetch the proxy's own address.
+const OWN_PAGES = /^\/(search|tester|test|debug|slow|inspector)(\?|$)/;
+const go = u => {
+  try {
+    const x = new URL(u, location.href);
+    if (x.origin === location.origin && OWN_PAGES.test(x.pathname + x.search)) return x.pathname + x.search + x.hash;
+  } catch(e){}
+  return '/go?url=' + encodeURIComponent(u);
+};
+const hostOf = u => { try{ return new URL(u).hostname }catch(e){ return u } };
+function log(msg, err){ const l=$('log'); l.textContent = msg ? '> ' + msg : ''; l.className = err ? 'err' : ''; }
+
+/* ---------- tabs ---------- */
+let seq = 0;
+const homeTab = {id:0, kind:'home', label:'home'};
+const tabs = [homeTab];
+let active = homeTab;
+const GAME_HOSTS = /$^/; // (nothing is forced out of tabs any more)
+const FRAME_ALLOW = 'autoplay; fullscreen; gamepad; clipboard-read; clipboard-write; microphone; camera; encrypted-media; picture-in-picture';
+
+function frameOf(t){ return t.frame || null; }
+function realUrlOf(t){
+  // the frame shows /go?url=<real address>; read the real address back out of it
+  try{
+    const loc = t.frame.contentWindow.location;
+    if (loc.pathname === '/go'){
+      let p = new URL(loc.href).searchParams.get('url');
+      if (p){ if(!/^[a-z][a-z0-9+.-]*:/i.test(p)) p = 'https://' + p; return p; }
+    }
+  }catch(e){}
+  return t.url;
+}
+function addTab(t){ tabs.push(t); selectTab(t); return t; }
+function openSite(raw, inActive){
+  if (isSearchTerm(raw)){
+    const engine = $('engine').value;
+    // IMPORTANT: this must be an ABSOLUTE address (location.origin + ...). A relative
+    // '/search?q=...' has no 'http://' and no '.', so isSearchTerm() would call it a
+    // search term AGAIN and openSite would call itself forever - that was the freeze bug.
+    const u = /brave\.com/.test(engine) ? location.origin + '/search?q=' + encodeURIComponent(raw.trim())
+      : engine.replace('%s', encodeURIComponent(raw.trim()));
+    return openSite(u, inActive);
+  }
+  const url = resolve(raw);
+  if (!url) return log('Enter a URL or search term first.', true);
+  log('');
+  // Games often refuse to run inside a frame, so by default they open in a real browser tab.
+  const mode = $('openMode').value;
+  const frameless = mode === 'window';
+  if (frameless && !(inActive && active.kind === 'site' && mode !== 'window' && !GAME_HOSTS.test(hostOf(url)))){
+    const w = window.open(go(url), '_blank');
+    if (!w) return log('Popup blocked. Allow popups for this site, then try again.', true);
+    return;
+  }
+  if (inActive && active.kind === 'site'){
+    active.url = url; active.label = hostOf(url);
+    active.frame.src = go(url);
+    renderTabs(); syncBar();
+    return;
+  }
+  const frame = document.createElement('iframe');
+  frame.setAttribute('allow', FRAME_ALLOW);
+  frame.setAttribute('allowfullscreen', '');
+  frame.title = hostOf(url);
+  const t = {id:++seq, kind:'site', url, label:hostOf(url), frame};
+  frame.addEventListener('load', () => { hookFrame(t); poll(); });
+  frame.src = go(url);
+  $('stage').append(frame);
+  addTab(t);
+}
+function hookFrame(t){
+  // let the panic key work while you are inside a page (the frame is on our own address)
+  try{
+    t.frame.contentWindow.addEventListener('keydown', e => { if (e.key === '`'){ e.preventDefault(); location.replace(panicUrl()); } });
+  }catch(e){}
+}
+function selectTab(t){
+  active = t;
+  renderTabs(); syncBar();
+}
+function closeTab(t){
+  if (t === homeTab) return;
+  if (t.frame){ try{ t.frame.src = 'about:blank'; }catch(e){} t.frame.remove(); }
+  if (t.el) t.el.remove();
+  const i = tabs.indexOf(t);
+  tabs.splice(i, 1);
+  if (active === t) active = tabs[Math.min(i, tabs.length - 1)] || homeTab;
+  renderTabs(); syncBar();
+}
+function renderTabs(){
+  const box = $('tabs'); box.textContent = '';
+  tabs.forEach(t => {
+    const d = document.createElement('div');
+    d.className = 'tab' + (t === active ? ' on' : '');
+    d.dataset.id = t.id; d.setAttribute('role','tab'); d.setAttribute('aria-selected', String(t === active)); d.tabIndex = 0;
+    const sp = document.createElement('span'); sp.textContent = t.label; d.append(sp);
+    if (t !== homeTab){
+      const x = document.createElement('button');
+      x.type = 'button'; x.className = 'tab-close'; x.dataset.x = t.id; x.textContent = '×';
+      x.setAttribute('aria-label', 'Close ' + t.label); d.append(x);
+    }
+    box.append(d);
+  });
+  $('home').hidden = active !== homeTab;
+  tabs.forEach(t => {
+    if (t.frame) t.frame.style.display = t === active ? 'block' : 'none';
+    if (t.el) t.el.style.display = t === active ? 'block' : 'none';
+  });
+}
+const bookmarks = (() => { try{ const a = JSON.parse(store.get('mongle.bookmarks') || '[]'); return Array.isArray(a) ? a.filter(b => b && typeof b.url === 'string' && typeof b.label === 'string') : []; }catch(e){ return []; } })();
+function syncBar(){
+  const site = active.kind === 'site';
+  $('btnBack').disabled = $('btnFwd').disabled = $('btnReload').disabled = !site;
+  $('btnSrc').disabled = $('btnPop').disabled = $('btnDiag').disabled = !site;
+  $('btnBm').disabled = !site;
+  const saved = site && bookmarks.some(b => b.url === active.url);
+  $('btnBm').innerHTML = saved ? '&#9733; saved' : '&#9734; bookmark';
+  $('btnBm').setAttribute('aria-pressed', String(!!saved));
+  if (document.activeElement !== $('addrInput')) $('addrInput').value = site ? active.url : '';
+  if (active === homeTab) $('url').focus({preventScroll:true});
+}
+// keep tab names and addresses up to date (pages change address and title by themselves)
+function poll(){
+  let changed = false;
+  tabs.forEach(t => {
+    if (t.kind !== 'site') return;
+    const u = realUrlOf(t);
+    let title = '';
+    try{ title = (t.frame.contentDocument && t.frame.contentDocument.title) || ''; }catch(e){}
+    const label = (title || hostOf(u)).slice(0, 60);
+    if (u !== t.url || label !== t.label){ t.url = u; t.label = label; changed = true; }
+    try{ t.loadMs = t.frame.contentWindow.__PLOADMS || t.loadMs; }catch(e){}
+  });
+  if (changed){ renderTabs(); syncBar(); renderBookmarks(); }
+  if (active.kind === 'site') $('speedBadge').textContent = active.loadMs ? (active.loadMs/1000).toFixed(1)+'s load' : '';
+  else $('speedBadge').textContent = '';
+}
+setInterval(poll, 800);
+
+$('tabs').addEventListener('click', e => {
+  const d = e.target.closest('.tab'); if (!d) return;
+  const t = tabs.find(t => String(t.id) === d.dataset.id); if (!t) return;
+  if (e.target.closest('[data-x]')) closeTab(t); else selectTab(t);
+});
+$('tabs').addEventListener('auxclick', e => { // middle-click closes
+  if (e.button !== 1) return;
+  const d = e.target.closest('.tab'); const t = d && tabs.find(t => String(t.id) === d.dataset.id);
+  if (t) closeTab(t);
+});
+$('btnHome').onclick = () => selectTab(homeTab);
+$('btnBack').onclick = () => { try{ active.frame.contentWindow.history.back(); }catch(e){} };
+$('btnFwd').onclick = () => { try{ active.frame.contentWindow.history.forward(); }catch(e){} };
+$('btnReload').onclick = () => { try{ active.frame.contentWindow.location.reload(); }catch(e){ active.frame.src = go(active.url); } };
+$('btnPop').onclick = () => { if (active.kind === 'site') window.open(go(active.url), '_blank'); };
+$('btnDiag').onclick = () => {
+  if (active.kind !== 'site') return;
+  log('Diagnosing...');
+  fetch('/debug?diagnose=1&site=' + encodeURIComponent(hostOf(active.url)))
+    .then(r => r.text())
+    .then(txt => log(txt))
+    .catch(() => log('Could not run diagnosis.', true));
+};
+$('addr').addEventListener('submit', e => {
+  e.preventDefault();
+  openSite($('addrInput').value, true);
+  $('addrInput').blur();
+});
+$('addrInput').addEventListener('focus', () => $('addrInput').select());
+$('btnBm').onclick = () => {
+  if (active.kind !== 'site') return;
+  const i = bookmarks.findIndex(b => b.url === active.url);
+  if (i >= 0) bookmarks.splice(i, 1); else bookmarks.push({url: active.url, label: active.label});
+  store.set('mongle.bookmarks', JSON.stringify(bookmarks));
+  renderBookmarks(); syncBar();
+};
+function renderBookmarks(){
+  const box = $('bookmarks'); box.textContent = '';
+  $('nobm').style.display = bookmarks.length ? 'none' : 'block';
+  bookmarks.forEach((bm, i) => {
+    const row = document.createElement('div'); row.className = 'bookmark-row';
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'tile'; open.dataset.u = bm.url;
+    const b = document.createElement('b'); b.textContent = bm.label;
+    const sm = document.createElement('small'); sm.textContent = bm.url;
+    open.append(b, sm);
+    const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'bookmark-remove'; rm.dataset.remove = i; rm.textContent = 'remove';
+    rm.setAttribute('aria-label', 'Remove bookmark ' + bm.label);
+    row.append(open, rm); box.append(row);
+  });
+}
+$('bookmarks').addEventListener('click', e => {
+  const rm = e.target.closest('[data-remove]');
+  if (rm){ bookmarks.splice(Number(rm.dataset.remove), 1); store.set('mongle.bookmarks', JSON.stringify(bookmarks)); renderBookmarks(); syncBar(); return; }
+  const it = e.target.closest('[data-u]'); if (it) openSite(it.dataset.u, false);
+});
+$('btnSrc').onclick = () => {
+  if (active.kind !== 'site') return;
+  const target = active;
+  try{
+    const doc = target.frame.contentDocument;
+    if (!doc || !doc.documentElement) throw new Error('The page is not ready yet.');
+    const el = document.createElement('div'); el.className = 'source-pane';
+    const pre = document.createElement('pre'), code = document.createElement('code');
+    code.textContent = '<!doctype html>\n' + doc.documentElement.outerHTML;
+    pre.append(code); el.append(pre); $('stage').append(el);
+    addTab({id: ++seq, kind: 'source', url: '', label: 'source: ' + target.label, el});
+  }catch(e){ log(e.message || 'Could not read this page.', true); selectTab(homeTab); }
+};
+
+$('form').addEventListener('submit', e => { e.preventDefault(); openSite($('url').value, false); $('url').value = ''; });
+
+/* ---------- quick launch ---------- */
+const sites = [
+  ['Poxel.io','poxel.io','https://poxel.io'], ['Slither.io','slither.io','https://slither.io'],
+  ['YouTube','youtube.com','https://youtube.com'], ['Google','google.com','https://google.com'],
+  ['Discord','discord.com','https://discord.com'], ['Reddit','reddit.com','https://reddit.com'],
+  ['Poki','poki.com','https://poki.com'], ['Spotify','spotify.com','https://spotify.com'], ['Wikipedia','wikipedia.org','https://wikipedia.org'],
+];
+$('tiles').innerHTML = sites.map(([n,d,u]) =>
+  '<button class="tile" type="button" data-u="' + u + '"><b>' + n + '</b><small>' + d + '</small></button>').join('');
+$('tiles').addEventListener('click', e => { const t=e.target.closest('.tile'); if(t) openSite(t.dataset.u, false); });
+
+/* ---------- settings ---------- */
+// Brave is the default. (Older saved choices from before Brave existed are ignored once.)
+const savedEngine = store.get('mongle.engine');
+if (savedEngine && store.get('mongle.engineV') === '2' && [...$('engine').options].some(o => o.value === savedEngine)) $('engine').value = savedEngine;
+store.set('mongle.engineV', '2');
+$('engine').onchange = () => store.set('mongle.engine', $('engine').value);
+const savedMode = store.get('mongle.openMode'); if (savedMode === 'window') $('openMode').value = 'window';
+$('openMode').onchange = () => store.set('mongle.openMode', $('openMode').value);
+['panic','ctitle'].forEach(k=>{ const v=store.get('mongle.'+k); if(v) $(k).value=v; $(k).oninput=()=>store.set('mongle.'+k,$(k).value); });
+
+/* ---------- keys, panic, about:blank cloak ---------- */
+const typing = () => /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement && document.activeElement.tagName);
+addEventListener('keydown', e => {
+  if (e.key==='/' && !typing()){ e.preventDefault(); (active===homeTab ? $('url') : $('addrInput')).focus(); }
+  if (e.key==='`'){ e.preventDefault(); location.replace(panicUrl()); }
+});
+const panicUrl = () => $('panic').value.trim() || 'https://classroom.google.com';
+$('cloak').onclick = () => {
+  const w = window.open('about:blank','_blank');
+  if (!w) return log('Popup blocked. Allow popups for this site, then try again.', true);
+  w.document.title = $('ctitle').value.trim() || 'Google Drive';
+  const f = w.document.createElement('iframe'); f.src = location.href;
+  f.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0';
+  w.document.body.style.margin = '0'; w.document.body.append(f);
+  location.replace(panicUrl());
+};
+
+function renderPasswords(){
+  fetch('/__pw/list').then(r=>r.json()).then(list=>{
+    const box = $('pwlist'); box.textContent = '';
+    $('nopw').style.display = list.length ? 'none' : 'block';
+    list.forEach(e => {
+      const row = document.createElement('div'); row.className = 'bookmark-row';
+      const info = document.createElement('div'); info.className = 'tile';
+      info.innerHTML = '<b>' + e.site.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</b><small>' + e.username.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</small>';
+      const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'bookmark-remove'; rm.textContent = 'remove';
+      rm.onclick = () => fetch('/__pw/delete', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({id: e.id})}).then(renderPasswords);
+      row.append(info, rm); box.append(row);
+    });
+  }).catch(()=>{});
+}
+renderPasswords();
+renderBookmarks(); renderTabs(); syncBar();
+
+/* ---------- matrix rain ---------- */
+(function(){
+  const c=$('rain'), x=c.getContext('2d'); let cols, drops, w, h;
+  const glyphs='01アイウエオカキクケコサシスセソ{}[]<>/$#';
+  function size(){ w=c.width=innerWidth; h=c.height=innerHeight; cols=Math.floor(w/16); drops=Array.from({length:cols},()=>Math.random()*h/16); }
+  size(); addEventListener('resize',size);
+  setInterval(()=>{
+    x.fillStyle='rgba(0,0,0,.12)'; x.fillRect(0,0,w,h); x.fillStyle='#00ff41'; x.font='14px monospace';
+    drops.forEach((d,i)=>{ x.fillText(glyphs[Math.random()*glyphs.length|0], i*16, d*16);
+      drops[i] = (d*16>h && Math.random()>.975) ? 0 : d+1; });
+  },60);
+})();
+
+/* ---------- boot sequence (once per session; click or key to skip) ---------- */
+(function(){
+  const boot=$('boot'), reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  let seen=false; try{ seen=sessionStorage.getItem('mongle.boot') }catch(e){}
+  const finish = () => { boot.classList.add('done'); try{ sessionStorage.setItem('mongle.boot','1') }catch(e){}
+    $('title').classList.add('glitch'); $('url').focus({preventScroll:true}); };
+  if (seen || reduce) return finish();
+  const lines = ['mongle_os bios v1.0','mounting /dev/games ........ ok','loading proxy engine ........ ok',
+    'negotiating secure tunnel ... ok','access granted.',''];
+  let i=0, done=false;
+  const end = () => { if(done) return; done=true; finish(); };
+  boot.addEventListener('click', end);
+  addEventListener('keydown', e => { if(done) return; e.preventDefault(); end(); }, true);
+  (function next(){
+    if (done) return;
+    if (i>=lines.length) return setTimeout(end,350);
+    boot.textContent += (i? '\n':'') + '> ' + lines[i++]; setTimeout(next, 260);
+  })();
+})();
+</script>
+</body>
+</html>
